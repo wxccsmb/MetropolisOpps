@@ -263,8 +263,8 @@
     ];
 
     const BALL_OPTIONS = [
-      { value: 'SE', label: '🔵 Action on SE' },
-      { value: 'AM', label: '🟢 Action on AM' },
+      { value: 'SE', label: '🔵 Action on CollabSE' },
+      { value: 'AM', label: '🟢 Action on CollabPSS' },
       { value: 'Partner', label: '🟣 Action on Partner' },
       { value: 'Customer', label: '🟠 Action on Customer' }
     ];
@@ -515,8 +515,8 @@
         { id: null, label: 'Total Pipeline', value: formatCurrency(kpi.total), sub: state.deals.length + ' deals', color: 'border-cisco-cyan/40 hover:border-cisco-cyan' },
         { id: 'active', label: 'Active Deals', value: kpi.activeCount + ' · ' + formatCurrency(kpi.activeAmt), sub: 'Open pipeline', color: 'border-emerald-500/40 hover:border-emerald-500' },
         { id: 'closed', label: 'Closed Deals', value: kpi.closedCount + ' · ' + formatCurrency(kpi.closedAmt), sub: 'Won / lost', color: 'border-slate-500/40 hover:border-slate-400' },
-        { id: 'se', label: 'Action: SE', value: kpi.seCount, sub: '🔵 Ball on SE', color: 'border-blue-500/40 hover:border-blue-500' },
-        { id: 'am', label: 'Action: AM', value: kpi.amCount, sub: '🟢 Ball on AM', color: 'border-emerald-500/40 hover:border-emerald-500' }
+        { id: 'se', label: 'Action: CollabSE', value: kpi.seCount, sub: '🔵 Ball on CollabSE', color: 'border-blue-500/40 hover:border-blue-500' },
+        { id: 'am', label: 'Action: CollabPSS', value: kpi.amCount, sub: '🟢 Ball on CollabPSS', color: 'border-emerald-500/40 hover:border-emerald-500' }
       ];
 
       document.getElementById('kpi-ribbon').innerHTML = items.map(item => `
@@ -963,7 +963,7 @@
           'Stage': 'Discovery / Demo',
           'Solution': 'Webex Calling & Cloud Connect',
           'Health': 'Green',
-          'Ball in Court': 'Action on SE',
+          'Ball in Court': 'Action on CollabSE',
           "What's Next": 'Schedule discovery workshop',
           'S&C Link': 'https://sc.cisco.com/deal/0000000'
         }];

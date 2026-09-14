@@ -9,6 +9,9 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
   <script>
     tailwind.config = {
       theme: {
@@ -57,9 +60,11 @@
           <h1 class="text-lg font-bold tracking-tight">Metropolis Collaboration</h1>
           <p class="text-xs text-slate-400">Cisco SE &amp; AM Opportunity Tracker</p>
           <p id="deployment-label" class="text-[10px] text-slate-600 mt-0.5" title="Each GitHub Pages repo stores data separately"></p>
+          <p id="sync-status" class="text-[10px] mt-0.5 text-slate-500">⏳ Checking sync…</p>
         </div>
       </div>
       <div class="flex flex-wrap items-center gap-2">
+        <button onclick="App.openSyncModal()" class="px-3 py-1.5 text-xs font-medium rounded-lg border border-cisco-cyan/40 text-cisco-cyan hover:bg-cisco-cyan/10 transition">🐙 GitHub Sync</button>
         <button onclick="App.openImportModal()" class="px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-700 hover:border-cisco-cyan hover:text-cisco-cyan transition">Import</button>
         <button onclick="App.exportExcel()" class="px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-700 hover:border-cisco-cyan hover:text-cisco-cyan transition">Export Excel</button>
         <button onclick="App.exportCSV()" class="px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-700 hover:border-cisco-cyan hover:text-cisco-cyan transition">Export CSV</button>
@@ -72,6 +77,10 @@
   </header>
 
   <main class="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+
+    <div id="cloud-banner" class="hidden rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+      <strong>Local-only mode.</strong> Deals are saved in this browser only. Click <button onclick="App.openSyncModal()" class="underline text-cisco-cyan">🐙 GitHub Sync</button> to save deals to your GitHub repo and share across browsers and teammates.
+    </div>
 
     <!-- KPI Ribbon -->
     <section id="kpi-ribbon" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3"></section>
@@ -263,6 +272,112 @@
     </div>
   </div>
 
+  <!-- Sync Modal -->
+  <div id="sync-modal" class="hidden fixed inset-0 z-50 flex items-start justify-center p-4 overflow-y-auto">
+    <div class="modal-backdrop fixed inset-0 bg-black/70" onclick="App.closeSyncModal()"></div>
+    <div class="relative bg-slate-900 border border-slate-800 rounded-xl w-full max-w-lg my-8 shadow-2xl">
+      <div class="flex items-center justify-between px-6 py-4 border-b border-slate-800">
+        <h2 class="text-lg font-semibold">Sync Setup</h2>
+        <button onclick="App.closeSyncModal()" class="text-slate-400 hover:text-white text-xl leading-none">&times;</button>
+      </div>
+      <div class="px-6 pt-4">
+        <div class="flex rounded-lg border border-slate-800 overflow-hidden mb-4">
+          <button type="button" id="sync-tab-github" onclick="App.showSyncTab('github')" class="flex-1 px-3 py-2 text-xs font-medium bg-cisco-cyan/15 text-cisco-cyan">🐙 GitHub (Recommended)</button>
+          <button type="button" id="sync-tab-firebase" onclick="App.showSyncTab('firebase')" class="flex-1 px-3 py-2 text-xs font-medium bg-slate-900 text-slate-400 hover:text-slate-200">☁️ Firebase</button>
+        </div>
+      </div>
+
+      <!-- GitHub Panel -->
+      <div id="sync-panel-github" class="p-6 pt-0 space-y-4 text-sm">
+        <p class="text-slate-400">Save deals to a <code class="text-cisco-cyan">pipeline-data.json</code> file in your GitHub repo. Perfect if you're already hosting on GitHub Pages.</p>
+        <ol class="list-decimal list-inside space-y-1 text-slate-400 text-xs">
+          <li>Go to <a href="https://github.com/settings/tokens" target="_blank" rel="noopener noreferrer" class="text-cisco-cyan hover:underline">GitHub → Settings → Developer settings → Personal access tokens</a></li>
+          <li>Create a token with <strong class="text-slate-300">repo</strong> scope (classic token)</li>
+          <li>Enter your repo details below — use the same repo where <code class="text-slate-300">index.html</code> is hosted</li>
+        </ol>
+        <form id="github-form" class="space-y-3" onsubmit="App.saveGitHubConfig(event)">
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">GitHub Username</label>
+              <input name="owner" required placeholder="your-username" class="w-full px-3 py-2 text-sm rounded-lg bg-slate-950 border border-slate-700 focus:border-cisco-cyan focus:outline-none">
+            </div>
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">Repository Name</label>
+              <input name="repo" required placeholder="my-pipeline-repo" class="w-full px-3 py-2 text-sm rounded-lg bg-slate-950 border border-slate-700 focus:border-cisco-cyan focus:outline-none">
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">Branch</label>
+              <input name="branch" value="main" placeholder="main" class="w-full px-3 py-2 text-sm rounded-lg bg-slate-950 border border-slate-700 focus:border-cisco-cyan focus:outline-none">
+            </div>
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">Data File Path</label>
+              <input name="path" value="pipeline-data.json" class="w-full px-3 py-2 text-sm rounded-lg bg-slate-950 border border-slate-700 focus:border-cisco-cyan focus:outline-none">
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Personal Access Token</label>
+            <input name="token" type="password" required placeholder="ghp_xxxxxxxxxxxx" class="w-full px-3 py-2 text-sm rounded-lg bg-slate-950 border border-slate-700 focus:border-cisco-cyan focus:outline-none">
+            <p class="text-[10px] text-slate-500 mt-1">Stored in this browser only. Never share your token publicly.</p>
+          </div>
+          <div class="flex justify-between gap-3 pt-2">
+            <button type="button" onclick="App.disconnectSync()" class="px-3 py-2 text-xs rounded-lg border border-red-500/40 text-red-400 hover:bg-red-500/10">Disconnect</button>
+            <div class="flex gap-2">
+              <button type="button" onclick="App.refreshFromRemote()" class="px-3 py-2 text-xs rounded-lg border border-slate-700 text-slate-300 hover:border-slate-500">Refresh</button>
+              <button type="button" onclick="App.closeSyncModal()" class="px-4 py-2 text-sm rounded-lg border border-slate-700">Cancel</button>
+              <button type="submit" class="px-5 py-2 text-sm font-semibold rounded-lg bg-cisco-cyan text-slate-950 hover:bg-sky-300">Save &amp; Connect</button>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      <!-- Firebase Panel -->
+      <div id="sync-panel-firebase" class="hidden p-6 pt-0 space-y-4 text-sm">
+        <p class="text-slate-400">Alternative: connect a free <a href="https://console.firebase.google.com/" target="_blank" rel="noopener noreferrer" class="text-cisco-cyan hover:underline">Firebase</a> project.</p>
+        <form id="cloud-form" class="space-y-3" onsubmit="App.saveCloudConfig(event)">
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">API Key</label>
+            <input name="apiKey" class="w-full px-3 py-2 text-sm rounded-lg bg-slate-950 border border-slate-700 focus:border-cisco-cyan focus:outline-none">
+          </div>
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Auth Domain</label>
+            <input name="authDomain" placeholder="your-project.firebaseapp.com" class="w-full px-3 py-2 text-sm rounded-lg bg-slate-950 border border-slate-700 focus:border-cisco-cyan focus:outline-none">
+          </div>
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Project ID</label>
+            <input name="projectId" class="w-full px-3 py-2 text-sm rounded-lg bg-slate-950 border border-slate-700 focus:border-cisco-cyan focus:outline-none">
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">Storage Bucket</label>
+              <input name="storageBucket" placeholder="your-project.appspot.com" class="w-full px-3 py-2 text-sm rounded-lg bg-slate-950 border border-slate-700 focus:border-cisco-cyan focus:outline-none">
+            </div>
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">Messaging Sender ID</label>
+              <input name="messagingSenderId" class="w-full px-3 py-2 text-sm rounded-lg bg-slate-950 border border-slate-700 focus:border-cisco-cyan focus:outline-none">
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">App ID</label>
+            <input name="appId" class="w-full px-3 py-2 text-sm rounded-lg bg-slate-950 border border-slate-700 focus:border-cisco-cyan focus:outline-none">
+          </div>
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Pipeline ID</label>
+            <input name="pipelineId" id="cloud-pipeline-id" class="w-full px-3 py-2 text-sm rounded-lg bg-slate-950 border border-slate-700 focus:border-cisco-cyan focus:outline-none">
+          </div>
+          <div class="flex justify-between gap-3 pt-2">
+            <button type="button" onclick="App.disconnectSync()" class="px-3 py-2 text-xs rounded-lg border border-red-500/40 text-red-400 hover:bg-red-500/10">Disconnect</button>
+            <div class="flex gap-2">
+              <button type="button" onclick="App.closeSyncModal()" class="px-4 py-2 text-sm rounded-lg border border-slate-700">Cancel</button>
+              <button type="submit" class="px-5 py-2 text-sm font-semibold rounded-lg bg-cisco-cyan text-slate-950 hover:bg-sky-300">Save &amp; Connect</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
   <!-- Hidden file input for JSON restore -->
   <input type="file" id="restore-file" accept=".json" class="hidden">
 
@@ -312,7 +427,8 @@
       { value: 'SE', label: '🔵 Action on CollabSE' },
       { value: 'AM', label: '🟢 Action on CollabPSS' },
       { value: 'Partner', label: '🟣 Action on Partner' },
-      { value: 'Customer', label: '🟠 Action on Customer' }
+      { value: 'Customer', label: '🟠 Action on Customer' },
+      { value: 'None', label: '⚪ Nothing Pending' }
     ];
 
     const COLUMN_MAP = {
@@ -489,6 +605,7 @@
     function normalizeBall(val) {
       if (!val) return 'SE';
       const s = String(val).toLowerCase();
+      if (s.includes('nothing') || s.includes('none') || s.includes('no action') || s.includes('⚪') || s.includes('pending') && s.includes('nothing')) return 'None';
       if (s.includes('am') || s.includes('account manager') || s.includes('🟢')) return 'AM';
       if (s.includes('partner') || s.includes('🟣')) return 'Partner';
       if (s.includes('customer') || s.includes('🟠')) return 'Customer';
@@ -501,7 +618,7 @@
     }
 
     function ballColor(val) {
-      const map = { SE: 'text-blue-400 bg-blue-400/10 border-blue-400/30', AM: 'text-emerald-400 bg-emerald-400/10 border-emerald-400/30', Partner: 'text-purple-400 bg-purple-400/10 border-purple-400/30', Customer: 'text-orange-400 bg-orange-400/10 border-orange-400/30' };
+      const map = { SE: 'text-blue-400 bg-blue-400/10 border-blue-400/30', AM: 'text-emerald-400 bg-emerald-400/10 border-emerald-400/30', Partner: 'text-purple-400 bg-purple-400/10 border-purple-400/30', Customer: 'text-orange-400 bg-orange-400/10 border-orange-400/30', None: 'text-slate-400 bg-slate-400/10 border-slate-400/30' };
       return map[val] || map.SE;
     }
 
@@ -594,19 +711,207 @@
       ];
     }
 
+    const CLOUD_CONFIG_KEY = 'cisco_pipeline_cloud_config_v1';
+    const GITHUB_CONFIG_KEY = 'cisco_pipeline_github_config_v1';
+    const SYNC_PROVIDER_KEY = 'cisco_pipeline_sync_provider';
+    const CLOUD_COLLECTION = 'pipelines';
+
+    let cloudDb = null;
+    let cloudUnsubscribe = null;
+    let suppressCloudListener = false;
+    let saveRemoteTimer = null;
+    let githubFileSha = null;
+    let githubPollTimer = null;
+
     const state = {
       deals: [],
       search: '',
       statusTab: 'all',
       kpiFilter: null,
       sort: 'recent',
-      bumpId: null
+      bumpId: null,
+      syncReady: false,
+      syncProvider: null
     };
 
-    function load() {
+    function getCloudConfig() {
+      try {
+        const raw = localStorage.getItem(CLOUD_CONFIG_KEY);
+        return raw ? JSON.parse(raw) : null;
+      } catch (e) { return null; }
+    }
+
+    function setCloudConfig(config) {
+      if (config) localStorage.setItem(CLOUD_CONFIG_KEY, JSON.stringify(config));
+      else localStorage.removeItem(CLOUD_CONFIG_KEY);
+    }
+
+    function getGitHubConfig() {
+      try {
+        const raw = localStorage.getItem(GITHUB_CONFIG_KEY);
+        return raw ? JSON.parse(raw) : null;
+      } catch (e) { return null; }
+    }
+
+    function setGitHubConfig(config) {
+      if (config) localStorage.setItem(GITHUB_CONFIG_KEY, JSON.stringify(config));
+      else localStorage.removeItem(GITHUB_CONFIG_KEY);
+    }
+
+    function getSyncProvider() {
+      return localStorage.getItem(SYNC_PROVIDER_KEY) || null;
+    }
+
+    function setSyncProvider(provider) {
+      if (provider) localStorage.setItem(SYNC_PROVIDER_KEY, provider);
+      else localStorage.removeItem(SYNC_PROVIDER_KEY);
+    }
+
+    function getCloudPipelineId() {
+      const cfg = getCloudConfig();
+      if (cfg?.pipelineId) return cfg.pipelineId;
+      const label = getDeploymentLabel().replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
+      return 'pipeline-' + (label || 'default');
+    }
+
+    function cloudEnabled() {
+      return getSyncProvider() === 'firebase' && !!(getCloudConfig()?.apiKey && getCloudConfig()?.projectId && getCloudConfig()?.appId);
+    }
+
+    function githubEnabled() {
+      const cfg = getGitHubConfig();
+      return getSyncProvider() === 'github' && !!(cfg?.owner && cfg?.repo && cfg?.token);
+    }
+
+    function syncEnabled() {
+      return githubEnabled() || cloudEnabled();
+    }
+
+    function toBase64(str) {
+      return btoa(unescape(encodeURIComponent(str)));
+    }
+
+    function fromBase64(b64) {
+      return decodeURIComponent(escape(atob(b64.replace(/\s/g, ''))));
+    }
+
+    function githubApiUrl(cfg) {
+      const path = (cfg.path || 'pipeline-data.json').replace(/^\//, '');
+      const branch = cfg.branch || 'main';
+      return `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${path}?ref=${encodeURIComponent(branch)}`;
+    }
+
+    function githubHeaders(cfg) {
+      return {
+        'Authorization': `Bearer ${cfg.token}`,
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28'
+      };
+    }
+
+    async function loadFromGitHub() {
+      const cfg = getGitHubConfig();
+      if (!cfg) return false;
+      try {
+        const res = await fetch(githubApiUrl(cfg), { headers: githubHeaders(cfg) });
+        if (res.status === 404) return false;
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.message || `GitHub error ${res.status}`);
+        }
+        const data = await res.json();
+        githubFileSha = data.sha;
+        const parsed = JSON.parse(fromBase64(data.content));
+        const deals = Array.isArray(parsed) ? parsed : (parsed.deals || []);
+        if (!Array.isArray(deals)) throw new Error('Invalid pipeline-data.json format');
+        state.deals = deals.map(normalizeDeal);
+        saveLocal();
+        updateSyncStatus('synced-github');
+        return true;
+      } catch (err) {
+        updateSyncStatus('error', err.message);
+        return false;
+      }
+    }
+
+    async function saveToGitHub() {
+      const cfg = getGitHubConfig();
+      if (!cfg) return;
+      const path = (cfg.path || 'pipeline-data.json').replace(/^\//, '');
+      const branch = cfg.branch || 'main';
+      const payload = JSON.stringify({ deals: state.deals, updatedAt: new Date().toISOString() }, null, 2);
+      const body = {
+        message: 'Update collaboration pipeline data',
+        content: toBase64(payload),
+        branch
+      };
+      if (githubFileSha) body.sha = githubFileSha;
+
+      const put = async () => fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${path}`, {
+        method: 'PUT',
+        headers: { ...githubHeaders(cfg), 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+
+      let res = await put();
+      if (res.status === 409) {
+        const meta = await fetch(githubApiUrl(cfg), { headers: githubHeaders(cfg) });
+        if (meta.ok) {
+          const latest = await meta.json();
+          githubFileSha = latest.sha;
+          body.sha = githubFileSha;
+          res = await put();
+        }
+      }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || `GitHub save failed (${res.status})`);
+      }
+      const result = await res.json();
+      githubFileSha = result.content?.sha || githubFileSha;
+      updateSyncStatus('synced-github');
+    }
+
+    function startGitHubPolling() {
+      stopGitHubPolling();
+      githubPollTimer = setInterval(async () => {
+        if (!githubEnabled() || document.hidden) return;
+        const prev = JSON.stringify(state.deals);
+        const loaded = await loadFromGitHub();
+        if (loaded && JSON.stringify(state.deals) !== prev) render();
+      }, 60000);
+    }
+
+    function stopGitHubPolling() {
+      if (githubPollTimer) { clearInterval(githubPollTimer); githubPollTimer = null; }
+    }
+
+    function updateSyncStatus(status, detail) {
+      const el = document.getElementById('sync-status');
+      const banner = document.getElementById('cloud-banner');
+      if (!el) return;
+      const map = {
+        loading: { text: '⏳ Loading…', cls: 'text-slate-500' },
+        local: { text: '💾 Saved locally only', cls: 'text-amber-400' },
+        saving: { text: '🔄 Saving…', cls: 'text-cisco-cyan' },
+        'synced-github': { text: '🐙 Synced to GitHub', cls: 'text-emerald-400' },
+        'synced-firebase': { text: '☁️ Synced to Firebase', cls: 'text-emerald-400' },
+        error: { text: '⚠️ Sync error' + (detail ? ': ' + detail : ''), cls: 'text-red-400' },
+        offline: { text: '💾 Offline — using local cache', cls: 'text-amber-400' }
+      };
+      const info = map[status] || map.local;
+      el.textContent = info.text;
+      el.className = 'text-[10px] mt-0.5 ' + info.cls;
+      if (banner) banner.classList.toggle('hidden', syncEnabled() || status === 'loading');
+    }
+
+    function saveLocal() {
+      localStorage.setItem(getStorageKey(), JSON.stringify(state.deals));
+    }
+
+    function loadLocal() {
       const storageKey = getStorageKey();
       let raw = localStorage.getItem(storageKey);
-
       if (!raw) {
         const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
         if (legacy) {
@@ -614,20 +919,166 @@
           localStorage.setItem(storageKey, legacy);
         }
       }
-
       if (raw) {
         try {
           state.deals = JSON.parse(raw).map(normalizeDeal);
-          save();
-          return;
+          return true;
         } catch (e) { /* fall through */ }
       }
       state.deals = sampleDeals();
-      save();
+      return false;
+    }
+
+    async function initGitHub() {
+      if (!githubEnabled()) return false;
+      state.syncProvider = 'github';
+      state.syncReady = true;
+      startGitHubPolling();
+      return true;
+    }
+
+    async function initCloud() {
+      if (!cloudEnabled()) return false;
+      try {
+        const cfg = getCloudConfig();
+        if (!firebase.apps.length) {
+          firebase.initializeApp({
+            apiKey: cfg.apiKey,
+            authDomain: cfg.authDomain,
+            projectId: cfg.projectId,
+            storageBucket: cfg.storageBucket || undefined,
+            messagingSenderId: cfg.messagingSenderId || undefined,
+            appId: cfg.appId
+          });
+        }
+        await firebase.auth().signInAnonymously();
+        cloudDb = firebase.firestore();
+        state.syncProvider = 'firebase';
+        state.syncReady = true;
+        subscribeCloud();
+        return true;
+      } catch (err) {
+        console.error('Firebase init failed:', err);
+        state.syncReady = false;
+        state.syncProvider = null;
+        updateSyncStatus('error', err.message);
+        return false;
+      }
+    }
+
+    async function initSync() {
+      state.syncReady = false;
+      state.syncProvider = null;
+      stopGitHubPolling();
+      if (cloudUnsubscribe) { cloudUnsubscribe(); cloudUnsubscribe = null; }
+      cloudDb = null;
+
+      if (getSyncProvider() === 'github' && githubEnabled()) {
+        const ok = await initGitHub();
+        if (ok) return true;
+      }
+      if (getSyncProvider() === 'firebase' && cloudEnabled()) {
+        const ok = await initCloud();
+        if (ok) return true;
+      }
+      updateSyncStatus('local');
+      return false;
+    }
+
+    function subscribeCloud() {
+      if (!cloudDb || cloudUnsubscribe) return;
+      cloudUnsubscribe = cloudDb.collection(CLOUD_COLLECTION).doc(getCloudPipelineId()).onSnapshot(
+        doc => {
+          if (suppressCloudListener) return;
+          if (doc.exists && Array.isArray(doc.data().deals)) {
+            state.deals = doc.data().deals.map(normalizeDeal);
+            saveLocal();
+            render();
+            updateSyncStatus('synced-firebase');
+          }
+        },
+        err => updateSyncStatus('error', err.message)
+      );
+    }
+
+    async function loadFromCloud() {
+      if (!cloudDb) return false;
+      try {
+        const doc = await cloudDb.collection(CLOUD_COLLECTION).doc(getCloudPipelineId()).get();
+        if (doc.exists && Array.isArray(doc.data().deals)) {
+          state.deals = doc.data().deals.map(normalizeDeal);
+          saveLocal();
+          updateSyncStatus('synced-firebase');
+          return true;
+        }
+        return false;
+      } catch (err) {
+        updateSyncStatus('error', err.message);
+        return false;
+      }
+    }
+
+    async function saveToCloud() {
+      if (!cloudDb) return;
+      try {
+        suppressCloudListener = true;
+        await cloudDb.collection(CLOUD_COLLECTION).doc(getCloudPipelineId()).set({
+          deals: state.deals,
+          updatedAt: new Date().toISOString(),
+          pipelineId: getCloudPipelineId()
+        });
+        updateSyncStatus('synced-firebase');
+      } catch (err) {
+        updateSyncStatus('error', err.message);
+      } finally {
+        setTimeout(() => { suppressCloudListener = false; }, 300);
+      }
+    }
+
+    async function loadFromRemote() {
+      if (state.syncProvider === 'github') return loadFromGitHub();
+      if (state.syncProvider === 'firebase') return loadFromCloud();
+      return false;
+    }
+
+    async function saveToRemote() {
+      if (state.syncProvider === 'github') return saveToGitHub();
+      if (state.syncProvider === 'firebase') return saveToCloud();
+    }
+
+    async function load() {
+      updateSyncStatus('loading');
+      if (state.syncReady) {
+        const loaded = await loadFromRemote();
+        if (loaded) return;
+        const hadLocal = loadLocal();
+        if (hadLocal) {
+          await saveToRemote();
+          return;
+        }
+        state.deals = sampleDeals();
+        await save();
+        return;
+      }
+      loadLocal();
+      if (!localStorage.getItem(getStorageKey())) saveLocal();
+      updateSyncStatus('local');
     }
 
     function save() {
-      localStorage.setItem(getStorageKey(), JSON.stringify(state.deals));
+      saveLocal();
+      if (!state.syncReady) {
+        updateSyncStatus('local');
+        return Promise.resolve();
+      }
+      updateSyncStatus('saving');
+      clearTimeout(saveRemoteTimer);
+      return new Promise(resolve => {
+        saveRemoteTimer = setTimeout(async () => {
+          try { await saveToRemote(); } catch (e) { updateSyncStatus('error', e.message); }
+          resolve();
+        }, 500);
+      });
     }
 
     function getFilteredDeals() {
@@ -966,11 +1417,12 @@
     }
 
     const App = {
-      init() {
-        load();
+      async init() {
         populateFormSelects();
         const deployEl = document.getElementById('deployment-label');
         if (deployEl) deployEl.textContent = 'Data store: ' + getDeploymentLabel();
+        await initSync();
+        await load();
         document.getElementById('search-input').addEventListener('input', e => {
           state.search = e.target.value;
           render();
@@ -980,6 +1432,113 @@
           render();
         });
         document.getElementById('restore-file').addEventListener('change', e => App.handleRestore(e));
+        render();
+      },
+
+      openSyncModal() {
+        const provider = getSyncProvider() || 'github';
+        this.showSyncTab(provider);
+        const ghForm = document.getElementById('github-form');
+        const ghCfg = getGitHubConfig();
+        if (ghCfg) {
+          Object.keys(ghCfg).forEach(key => {
+            const el = ghForm.elements[key];
+            if (el) el.value = ghCfg[key] || '';
+          });
+        }
+        const fbForm = document.getElementById('cloud-form');
+        const fbCfg = getCloudConfig();
+        if (fbCfg) {
+          Object.keys(fbCfg).forEach(key => {
+            const el = fbForm.elements[key];
+            if (el) el.value = fbCfg[key] || '';
+          });
+        }
+        const pid = document.getElementById('cloud-pipeline-id');
+        if (pid && !pid.value) pid.value = getCloudPipelineId();
+        document.getElementById('sync-modal').classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
+      },
+
+      closeSyncModal() {
+        document.getElementById('sync-modal').classList.add('hidden');
+        document.body.style.overflow = '';
+      },
+
+      showSyncTab(tab) {
+        const isGitHub = tab === 'github';
+        document.getElementById('sync-panel-github').classList.toggle('hidden', !isGitHub);
+        document.getElementById('sync-panel-firebase').classList.toggle('hidden', isGitHub);
+        document.getElementById('sync-tab-github').className = isGitHub
+          ? 'flex-1 px-3 py-2 text-xs font-medium bg-cisco-cyan/15 text-cisco-cyan'
+          : 'flex-1 px-3 py-2 text-xs font-medium bg-slate-900 text-slate-400 hover:text-slate-200';
+        document.getElementById('sync-tab-firebase').className = !isGitHub
+          ? 'flex-1 px-3 py-2 text-xs font-medium bg-cisco-cyan/15 text-cisco-cyan'
+          : 'flex-1 px-3 py-2 text-xs font-medium bg-slate-900 text-slate-400 hover:text-slate-200';
+      },
+
+      async saveGitHubConfig(e) {
+        e.preventDefault();
+        const form = e.target;
+        const config = {};
+        new FormData(form).forEach((v, k) => { config[k] = v.trim(); });
+        if (!config.branch) config.branch = 'main';
+        if (!config.path) config.path = 'pipeline-data.json';
+        setGitHubConfig(config);
+        setSyncProvider('github');
+        setCloudConfig(null);
+        if (firebase.apps.length) { try { await firebase.app().delete(); } catch (err) { /* ignore */ } }
+        this.closeSyncModal();
+        await initSync();
+        await load();
+        render();
+        alert('GitHub sync connected! Deals will save to ' + config.path + ' in your repo.');
+      },
+
+      async saveCloudConfig(e) {
+        e.preventDefault();
+        const form = e.target;
+        const config = {};
+        new FormData(form).forEach((v, k) => { config[k] = v.trim(); });
+        if (!config.pipelineId) config.pipelineId = getCloudPipelineId();
+        if (!config.apiKey || !config.projectId || !config.appId) {
+          alert('Please fill in API Key, Project ID, and App ID.');
+          return;
+        }
+        setCloudConfig(config);
+        setSyncProvider('firebase');
+        setGitHubConfig(null);
+        githubFileSha = null;
+        stopGitHubPolling();
+        this.closeSyncModal();
+        await initSync();
+        await load();
+        render();
+        alert('Firebase sync connected! Deals will now save to Firebase.');
+      },
+
+      async refreshFromRemote() {
+        if (!state.syncReady) { alert('Connect sync first.'); return; }
+        updateSyncStatus('loading');
+        const loaded = await loadFromRemote();
+        render();
+        alert(loaded ? 'Refreshed from remote.' : 'No remote data found yet.');
+      },
+
+      disconnectSync() {
+        if (!confirm('Disconnect sync? Data stays in this browser only.')) return;
+        setSyncProvider(null);
+        setGitHubConfig(null);
+        setCloudConfig(null);
+        githubFileSha = null;
+        stopGitHubPolling();
+        if (cloudUnsubscribe) { cloudUnsubscribe(); cloudUnsubscribe = null; }
+        cloudDb = null;
+        state.syncReady = false;
+        state.syncProvider = null;
+        if (firebase.apps.length) firebase.app().delete().catch(() => {});
+        this.closeSyncModal();
+        updateSyncStatus('local');
         render();
       },
 
@@ -1252,7 +1811,7 @@
     };
 
     window.App = App;
-    document.addEventListener('DOMContentLoaded', () => App.init());
+    document.addEventListener('DOMContentLoaded', () => { App.init().catch(err => { console.error(err); updateSyncStatus('error', err.message); }); });
   })();
   </script>
 </body>
